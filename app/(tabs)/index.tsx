@@ -44,8 +44,10 @@ export default function App() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [radars, setRadars] = useState<Radar[]>([]);
+  const [loadedPos, setLoadedPos] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  // const [nearbyRadars, setNearbyRadars] = useState<Radar[]>([]);
+  const [loadedNearby, setLoadedNearby] = useState(false);
+  const [nearbyRadars, setNearbyRadars] = useState<Radar[]>([]);
 
 
 
@@ -60,7 +62,7 @@ export default function App() {
 
       let location = await Location.getCurrentPositionAsync({});
       setLocation(location);
-
+      setLoadedPos(true)
     })()
   }, []);
 
@@ -86,14 +88,33 @@ export default function App() {
     fetchLocations();
   }, []);
 
+  useEffect(() => {
+    if (location) {
+      const userLat = location.coords.latitude;
+      const userLon = location.coords.longitude;
+
+      console.log("co : ", userLat, userLon)
+
+      // Filtrer les radars à proximité de l'utilisateur (par exemple, à moins de 10 km)
+      const nearby = radars.filter(radar => {
+        const distance = calculateDistance(userLat, userLon, radar.lat, radar.lng);
+        return distance <= 75; // Modifier cette valeur pour ajuster le rayon de recherche (en km)
+      });
+      console.log("nearby: ",nearby)
+      setNearbyRadars(nearby);
+      setLoadedNearby(true);
+    }
+  }, [location, radars]); // Recalculer les radars à proximité chaque fois que la position ou la liste des radars change
+
+
   return (
     <View style={styles.container}>
-      <MapView
+      {loadedPos && <MapView
         rotateEnabled={false}
         style={styles.map}
         initialRegion={{
-          latitude: location?.coords.latitude || 45.0,
-          longitude: location?.coords.longitude || 5.0,
+          latitude: location?.coords.latitude || 45,
+          longitude: location?.coords.longitude || 5,
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         }}
@@ -104,8 +125,8 @@ export default function App() {
           fillColor="green"
           strokeWidth={2}
         />  */}
-        {loaded && 
-          radars.slice(0, 100).map((radar) => (
+        {loaded && loadedNearby && 
+          nearbyRadars.map((radar) => (
             <Marker
               key={radar.id}
               coordinate={{ latitude: radar.lat, longitude: radar.lng }}
@@ -114,7 +135,8 @@ export default function App() {
           ))
         }
         
-      </MapView>
+      </MapView>}
+      
     </View>
   );
 }
