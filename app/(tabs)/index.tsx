@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import MapView, { Geojson, Marker } from 'react-native-maps';
 import { StyleSheet, View } from 'react-native';
 
@@ -47,7 +47,7 @@ export default function App() {
   const [loadedPos, setLoadedPos] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadedNearby, setLoadedNearby] = useState(false);
-  const [nearbyRadars, setNearbyRadars] = useState<Radar[]>([]);
+  // const [nearbyRadars, setNearbyRadars] = useState<Radar[]>([]);
 
 
 
@@ -88,24 +88,40 @@ export default function App() {
     fetchLocations();
   }, []);
 
-  useEffect(() => {
-    if (location) {
+  // useEffect(() => {
+  //   if (location) {
+  //     const userLat = location.coords.latitude; // changer pour tester
+  //     const userLon = location.coords.longitude; // changer pour tester
+
+  //     console.log("co : ", userLat, userLon)
+
+  //     // Filtrer les radars à proximité de l'utilisateur (par exemple, à moins de 10 km)
+  //     const nearby = radars.filter(radar => {
+  //       const distance = calculateDistance(userLat, userLon, radar.lat, radar.lng);
+  //       return distance <= 75; // Modifier cette valeur pour ajuster le rayon de recherche (en km)
+  //     });
+  //     console.log("nearby: ",nearby)
+  //     setNearbyRadars(nearby);
+  //     setLoadedNearby(true);
+  //   }
+  // }, [location, radars]); // Recalculer les radars à proximité chaque fois que la position ou la liste des radars change
+
+  // Calculer les radars proches avec useMemo
+  const nearbyRadars = useMemo(() => {
+    if (!location) return [];
       const userLat = location.coords.latitude;
       const userLon = location.coords.longitude;
 
-      console.log("co : ", userLat, userLon)
+    const nearby = radars.filter((radar) => {
+      const distance = calculateDistance(userLat, userLon, radar.lat, radar.lng);
+      return distance <= 75; 
+    });
 
-      // Filtrer les radars à proximité de l'utilisateur (par exemple, à moins de 10 km)
-      const nearby = radars.filter(radar => {
-        const distance = calculateDistance(userLat, userLon, radar.lat, radar.lng);
-        return distance <= 75; // Modifier cette valeur pour ajuster le rayon de recherche (en km)
-      });
-      console.log("nearby: ",nearby)
-      setNearbyRadars(nearby);
-      setLoadedNearby(true);
-    }
-  }, [location, radars]); // Recalculer les radars à proximité chaque fois que la position ou la liste des radars change
+    // console.log('Nearby radars:', nearby);
+    setLoadedNearby(true);
+    return nearby;
 
+  }, [location, radars]);
 
   return (
     <View style={styles.container}>
@@ -118,6 +134,7 @@ export default function App() {
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         }}
+        // onRegionChangeComplete={(region => setRegion(region))}
       >
         {/* <Geojson
           geojson={dataJSON}
