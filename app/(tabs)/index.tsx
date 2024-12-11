@@ -6,12 +6,19 @@ import * as Location from 'expo-location';
 import * as Permissions from "expo-permissions";
 import Modal from "react-native-modal";
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Link, Stack } from 'expo-router';
 
 export interface Radar {
   id: number,
   lat: number,
   lng: number,
   type: string,
+}
+
+export interface IApiRecords{
+  data: {Time_spent: number}[]
+  
 }
 
 Notifications.setNotificationHandler({
@@ -24,18 +31,34 @@ Notifications.setNotificationHandler({
 
 
 
-const API_URL = 'http://localhost:1338/api'; // Remplacez par l'URL de votre serveur Strapi
+
+const API_URL = 'https://c51d-37-64-102-102.ngrok-free.app/api/'; // Remplacez par l'URL de votre serveur Strapi
 
 const createRadarZoneTime = async (newData: any) => {
+  const token = await AsyncStorage.getItem('token');
+  if (!token) {
+    Alert.alert('Erreur', 'Vous devez être connecté pour soumettre des données.');
+    return;
+  }
+  console.log('before send', token, newData)
   try {
-    const response = await fetch(`${API_URL}/radar-zone-times`, {
+    const response = await fetch(`${API_URL}radar-zone-times`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ data: newData }), // Strapi attend les données dans une clé "data"
+      body: JSON.stringify({
+        data: {
+          id_radar: newData["id_radar"],
+          Time_spent: newData["Time_spent"]
+
+          // Time_spent: newData["Time_spent"].toString()
+        }
+      }), // Strapi attend les données dans une clé "data"
     });
     if (!response.ok) {
+      console.log('response', JSON.stringify(response, null, 2))
       throw new Error(`Erreur HTTP : ${response.status}`);
     }
     const data = await response.json();
@@ -88,6 +111,9 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return EARTH_RADIUS_KM * c; // Distance en kilomètres
 };
 
+
+// const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6OCwiaWF0IjoxNzMzOTIxNTg0LCJleHAiOjE3MzY1MTM1ODR9.Tz4Q6xlhGlr-U8fMOKjRsvckEwiYy0qvUz7ZwK902ws' // B, B
+
 export default function App() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -112,10 +138,13 @@ export default function App() {
   const [fin, setFin] = useState<Date | null>(null)
   const [seconds, setSeconds] = useState<Number | null>(null);
 
+  const [modalVisible, setModalVisible] = useState(false);
+  const [records, setRecords] = useState<Number[]>([]);
 
+  // const credentials = btoa(`${username}:${password}`)
 
   const co = async (data: any) => {
-    fetch("https://c51d-37-64-102-102.ngrok-free.app/api/auth/local/register", {
+    fetch(`${API_URL}auth/local/register`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -135,8 +164,11 @@ export default function App() {
       .catch((error) => {
         console.error("Co ; An error occurred:", error.message);
       });
-
+    // Stocker le token dans AsyncStorage
+    await AsyncStorage.setItem('token', data.jwt);
   }
+
+
 
   const startTimer = () => {
     setDebut(new Date()); // Enregistrez la date et l'heure de début
@@ -149,8 +181,9 @@ export default function App() {
       setFin(currentTime); // Enregistrez la date et l'heure de fin
 
       // Calculez la différence en secondes
-      const timeDifference = Math.floor((currentTime.getTime() - debut.getTime()) / 1000);
-      setSeconds(timeDifference);
+      const timeDifference = ((currentTime.getTime() - debut.getTime()) / 1000).toFixed(2);
+      console.log(timeDifference);
+      setSeconds(Number(timeDifference));
     }
   };
 
@@ -197,7 +230,7 @@ export default function App() {
         timeInterval: 3000,
         distanceInterval: 1,
       }, (newLocation) => {
-        console.log('new location : ', newLocation)
+        // console.log('new location : ', newLocation)
         setLocation(newLocation);
       });
     })()
@@ -253,7 +286,7 @@ export default function App() {
 
   // log pour region update
   useEffect(() => {
-    console.log("region: ", region)
+    // console.log("region: ", region)
   }, [region])
 
   // bool pour indiquer si on est dans une zone radar (update en fonction de location)
@@ -296,8 +329,10 @@ export default function App() {
         // on stop le timer 
         stopTimer()
         // on envoie la donné
-        const temps = '' + seconds
-        createRadarZoneTime({ Time_spent: temps})
+        createRadarZoneTime({
+          Time_spent: seconds,
+          id_radar: nearbyRadar.id
+        })
           .then(data => console.log('Entrée créée :', data));
 
       }
@@ -312,27 +347,123 @@ export default function App() {
   };
 
   const handleCo = () => {
-      const data =  JSON.stringify(
-        {
-          username: username,
-          email: email,
-          password: password
-        }
-      )
-      co(data)
-      setIsLogged(true)
+    const data = JSON.stringify(
+      {
+        username: username,
+        email: email,
+        password: password
+      }
+    )
+    co(data)
+    setIsLogged(true)
   };
+
+  const log = async () => {
+
+    const response = await fetch(`${API_URL}auth/local`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json', // Type de contenu JSON
+      },
+      body: JSON.stringify({
+        identifier: username,
+        password
+      })
+    });
+    const data = await response.json()
+    // Stocker le token dans AsyncStorage
+    await AsyncStorage.setItem('token', data.jwt);
+  }
+
+  const checkUserOn = async () => {
+    const token = await AsyncStorage.getItem('token');
+    await fetch(`${API_URL}users/me`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json', // Type de contenu JSON
+      }
+    });
+    console.log("test est connecté")
+  }
+
+
+  const handleLog = () => {
+    log()
+    setIsLogged(true)
+  }
 
   const handleLogToReg = () => {
     setIsCo(false)
-    
   };
 
+  useEffect(() => { console.log('logged ? : ', isLogged) }, [isLogged])
+
+  // const formatTime = (time: any) => {
+  //   if (time === null) return '00:00';
+
+  //   const minutes = Math.floor(time / 60);
+  //   const seconds = time % 60;
+  //   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  // };
+
+  const handlePress = (id: number) => {
+    Alert.alert("Information",
+      `Vous avez appuyé sur le marker : ${id}`, [
+      {
+        text: "OK",
+        onPress: () => console.log("Alerte fermée"), // Action pour le bouton OK
+        style: "cancel", // Style visuel (optionnel)
+      },
+      {
+        text: "Voir Records",
+        onPress: async () => {
+          // Exemple de données de test récupérées
+
+          const token = await AsyncStorage.getItem('token');
+          const response = await fetch(`${API_URL}radar-zone-times?filters[id_radar][$eq]=${id}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json', // Type de contenu JSON
+            }
+          });
+          const data = await response.json() as IApiRecords
+          console.log('data log : ', data)
+
+          setRecords(data.data.map(d=>d["Time_spent"]))
+          setModalVisible(true)
+        },
+      },
+    ],)
+
+  }
+
+  useEffect(()=>{console.log("records : ",records)},[records])
 
   return (
     <View style={styles.container}>
+      <SafeAreaView>
+        <TouchableOpacity style={styles.button} onPress={startTimer}>
+          <Text style={styles.buttonText}>{"start"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={stopTimer}>
+          <Text style={styles.buttonText}>{"stop"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={async () => (createRadarZoneTime({ Time_spent: seconds, id_radar: 12581 }))}>
+          <Text style={styles.buttonText}>{"send"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={async () => (checkUserOn)}>
+          <Text style={styles.buttonText}>{"test"}</Text>
+        </TouchableOpacity>
+
+      </SafeAreaView>
+      <Link href="/modal" style={styles.link}>
+        Open modal
+      </Link>
       {!isLogged && !isCo && <SafeAreaView style={styles.formcont}>
         <Text style={styles.text}>Sign up</Text>
+        {/* <Text style={styles.text}>{formatTime(seconds)}</Text> */}
         <TextInput
           style={styles.input}
           placeholder="Username"
@@ -361,33 +492,44 @@ export default function App() {
           <Text style={styles.buttonText}>{"Valider"}</Text>
         </TouchableOpacity>
 
+        {/* <TouchableOpacity style={styles.button} onPress={startTimer}>
+          <Text style={styles.buttonText}>{"start"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={stopTimer}>
+          <Text style={styles.buttonText}>{"stop"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={async () => (createRadarZoneTime({ Time_spent: seconds}))}>
+          <Text style={styles.buttonText}>{"send"}</Text>
+        </TouchableOpacity> */}
+
+
       </SafeAreaView>
 
       }
-      {!isLogged && isCo && 
-      <SafeAreaView style={styles.formcont}>
-        <Text style={styles.text}>Log in</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Username"
-          value={username}
-          onChangeText={setUsername}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Mot de passe"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-        <TouchableOpacity style={styles.button} onPress={handleLogToReg}>
-          <Text style={styles.buttonText}>{"Switch to reg"}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleCo}>
-          <Text style={styles.buttonText}>{"Valider"}</Text>
-        </TouchableOpacity>
+      {!isLogged && isCo &&
+        <SafeAreaView style={styles.formcont}>
+          <Text style={styles.text}>Log in</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Username"
+            value={username}
+            onChangeText={setUsername}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Mot de passe"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity style={styles.button} onPress={handleLogToReg}>
+            <Text style={styles.buttonText}>{"Switch to reg"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.button} onPress={handleLog}>
+            <Text style={styles.buttonText}>{"Valider"}</Text>
+          </TouchableOpacity>
 
-      </SafeAreaView>}
+        </SafeAreaView>}
       {isLogged && loadedPos &&
         <MapView
           rotateEnabled={false}
@@ -407,6 +549,7 @@ export default function App() {
               <React.Fragment key={radar.id}>
                 <Marker
                   coordinate={{ latitude: radar.lat, longitude: radar.lng }}
+                  onPress={() => handlePress(radar.id)}
                   title={radar.type} />
                 <Circle
                   center={{
@@ -467,6 +610,10 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
+  },
+  link: {
+    paddingTop: 20,
+    fontSize: 20,
   },
 });
 
